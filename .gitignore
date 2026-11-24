@@ -1,0 +1,66 @@
+# Everything made by hand goes into the repository: code, pictures, sounds, texts.
+# Only build folders and compiler leftovers are left out.
+
+# ---> Build folders
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+ARM64/
+build/
+target/
+ipch/
+cmake-build-*/
+.pio/
+.gradle/
+node_modules/
+__pycache__/
+TestResults/
+
+# ---> Compiler intermediates and finished builds
+*.obj
+*.o
+*.pdb
+*.ilk
+*.pch
+*.ipch
+*.idb
+*.iobj
+*.ipdb
+*.exp
+*.tlog
+*.lastbuildstate
+*.pyc
+*.pyo
+*.pdf
+*.exe
+*.dll
+*.zip
+*.rar
+*.7z
+
+# ---> Editor leftovers and personal settings
+.vs/
+*.user
+*.suo
+*.rsuser
+*.userprefs
+*.DotSettings.user
+*.VC.db
+*.VC.opendb
+*_wpftmp.csproj
+*.rs.bk
+*.log
+*.tmp
+~$*
+Thumbs.db
+cache.sqlite3
+
+
+# ---> Own libraries kept next to the code - do not hide them
+!lib/**/*.dll
+!**/lib/**/*.dll
+!**/Libraries/**/*.dll
+!**/ExternalDependencies/**/*.dll

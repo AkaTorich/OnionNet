@@ -1,0 +1,276 @@
+/* StalkNet — phosphor green on near black, ported from Theme.xaml. */
+
+:root {
+  --void: #050a05;
+  --panel: #0b140b;
+  --panel-deep: #071007;
+  --sunken: #030703;
+  --edge-light: #2c5c31;
+  --edge-dark: #040904;
+  --edge: #1e3a1e;
+  --ink: #86f79b;
+  --ink-dim: #4a9c58;
+  --ink-bright: #39ff6a;
+  --danger: #ff6b5f;
+  --warn: #e8d24a;
+  --hint: #3e7a48;
+  --console: #6fd980;
+  --mono: Consolas, "Lucida Console", "Courier New", monospace;
+  --bar: linear-gradient(#19381d, #0e240f 50%, #071807);
+  --btn: linear-gradient(#1b3d20, #102711);
+  --btn-hot: linear-gradient(#2a5e31, #17381a);
+  --btn-down: linear-gradient(#0b1c0c, #163419);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  user-select: none;
+  overflow: hidden;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--edge);
+}
+
+/* ---- Title bar --------------------------------------------------------- */
+.titlebar {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  background: var(--bar);
+  border-bottom: 1px solid var(--edge);
+  padding-left: 16px;
+}
+.brand { display: flex; align-items: baseline; gap: 2px; }
+.brand .bracket { color: var(--edge-light); font-size: 22px; }
+.brand .name { color: var(--ink-bright); font-size: 20px; font-weight: bold; }
+.brand .sub { color: var(--ink-dim); font-size: 11px; margin-left: 12px; align-self: flex-end; margin-bottom: 4px; }
+
+.title-spacer { flex: 1; -webkit-app-region: drag; height: 44px; }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  background: var(--sunken);
+  border: 1px solid var(--edge);
+  padding: 4px 10px;
+  margin-right: 8px;
+  color: var(--ink-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.lamp { width: 8px; height: 8px; border-radius: 50%; background: #7a2a2a; margin-right: 8px; }
+.lamp.on { background: var(--ink-bright); }
+
+.winbtns { display: flex; }
+.winbtn {
+  width: 42px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-dim);
+  font-size: 13px;
+  cursor: default;
+}
+.winbtn:hover { background: #17301a; color: var(--ink-bright); }
+.winbtn.close:hover { background: #8a2118; color: #fff; }
+
+/* ---- Body: left nav + content ----------------------------------------- */
+.body { display: flex; flex: 1; min-height: 0; }
+
+.nav {
+  width: 160px;
+  background: var(--panel-deep);
+  border-right: 1px solid var(--edge);
+  padding-top: 10px;
+  flex-shrink: 0;
+}
+.navitem {
+  position: relative;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  padding-left: 18px;
+  color: var(--ink-dim);
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+.navitem:hover { background: #0e1c0f; color: var(--ink); }
+.navitem.active { background: #122413; color: var(--ink-bright); font-weight: bold; }
+.navitem.active::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--ink-bright);
+}
+
+.content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 24px; }
+.panel { display: none; max-width: 860px; }
+.panel.active { display: block; }
+
+/* ---- Group boxes ------------------------------------------------------- */
+.group {
+  position: relative;
+  border: 1px solid var(--edge);
+  background: var(--panel-deep);
+  padding: 20px 14px 14px;
+  margin: 10px 0 20px;
+}
+.group > .ghead {
+  position: absolute;
+  top: -7px;
+  left: 10px;
+  background: var(--panel-deep);
+  padding: 0 6px;
+  color: var(--ink-bright);
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+/* ---- Fields ------------------------------------------------------------ */
+label.lbl {
+  display: block;
+  color: var(--ink-dim);
+  font-size: 11px;
+  letter-spacing: 1px;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+}
+.field { margin-bottom: 12px; }
+.row { display: flex; gap: 16px; }
+.row .grow { flex: 1; }
+.field.small { width: 120px; }
+
+input[type="text"], input[type="password"], input:not([type]) {
+  width: 100%;
+  background: var(--sunken);
+  border: 1px solid var(--edge);
+  box-shadow: inset 1px 1px 0 #020602;
+  color: var(--ink);
+  caret-color: var(--ink-bright);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 5px 7px;
+  min-height: 24px;
+  user-select: text;
+}
+input:focus { outline: none; border-color: var(--ink-bright); }
+input[readonly] { color: var(--ink-bright); }
+input::placeholder { color: #2e5a36; }
+input::selection { background: #1e5c2a; color: var(--ink); }
+
+/* ---- Buttons ----------------------------------------------------------- */
+button {
+  background: var(--btn);
+  border: 1px solid var(--edge-dark);
+  box-shadow: inset 1px 1px 0 var(--edge-light);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  min-width: 84px;
+  min-height: 26px;
+  padding: 4px 10px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+button:hover { background: var(--btn-hot); color: var(--ink-bright); }
+button:active { background: var(--btn-down); box-shadow: inset 1px 1px 0 var(--edge-dark); }
+button.slim { min-width: 0; padding: 3px 10px; min-height: 22px; }
+
+.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+
+/* ---- Checkboxes -------------------------------------------------------- */
+.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--ink); }
+.check input { display: none; }
+.check .box {
+  width: 14px; height: 14px;
+  background: var(--sunken);
+  border: 1px solid var(--edge);
+  box-shadow: inset 1px 1px 0 #020602;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ink-bright); font-size: 10px; font-weight: bold; line-height: 1;
+}
+.check input:checked + .box::after { content: "X"; }
+
+/* ---- Hints ------------------------------------------------------------- */
+.hint { color: var(--hint); font-size: 11px; margin-top: 4px; line-height: 1.5; }
+code { color: var(--ink-bright); background: var(--sunken); padding: 0 3px; }
+
+/* ---- Tables ------------------------------------------------------------ */
+table.grid {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--sunken);
+  border: 1px solid var(--edge);
+  margin-top: 8px;
+}
+table.grid th {
+  background: var(--bar);
+  color: var(--ink-bright);
+  font-size: 11px;
+  font-weight: bold;
+  text-align: left;
+  letter-spacing: 1px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--edge);
+  border-right: 1px solid var(--edge);
+}
+table.grid td {
+  padding: 5px 8px;
+  border-bottom: 1px solid #12240f;
+  color: var(--ink);
+  height: 24px;
+}
+table.grid tr:nth-child(even) td { background: #071007; }
+table.grid tbody tr:hover td { background: #0e1c0f; }
+table.grid td.empty { color: var(--ink-dim); font-style: italic; }
+table.grid button { min-width: 0; min-height: 20px; padding: 2px 8px; }
+
+/* ---- Console log ------------------------------------------------------- */
+#tab-log { max-width: none; height: 100%; }
+#tab-log .group { background: var(--sunken); display: flex; flex-direction: column; height: calc(100vh - 118px); margin-bottom: 0; }
+.log {
+  flex: 1;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--console);
+  font-size: 11px;
+  padding: 2px 2px 2px 4px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  user-select: text;
+}
+.log:empty::before { content: "node idle — start it on the IDENTITY tab"; color: var(--ink-dim); }
+
+/* ---- Status bar -------------------------------------------------------- */
+.statusbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 28px;
+  padding: 0 14px;
+  background: var(--panel);
+  border-top: 1px solid var(--edge);
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+
+/* ---- Scrollbars -------------------------------------------------------- */
+::-webkit-scrollbar { width: 12px; height: 12px; background: var(--sunken); }
+::-webkit-scrollbar-thumb { background: var(--btn); border: 1px solid var(--edge-dark); box-shadow: inset 1px 1px 0 var(--edge-light); }
+::-webkit-scrollbar-corner { background: var(--sunken); }
+
+h2 { display: none; }

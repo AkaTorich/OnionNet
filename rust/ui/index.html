@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StalkNet</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Title bar ------------------------------------------------------------ -->
+    <div class="titlebar">
+      <div class="brand">
+        <span class="bracket">[</span>
+        <span class="name">StalkNet</span>
+        <span class="bracket">]</span>
+        <span class="sub">onion network</span>
+      </div>
+      <div class="title-spacer" data-tauri-drag-region></div>
+      <div class="pill"><span class="lamp" id="lamp"></span><span id="state-text">offline</span></div>
+      <div class="pill" id="stats">Own circuits: 0&nbsp;&nbsp; Relayed: 0&nbsp;&nbsp; Streams: 0</div>
+      <div class="winbtns">
+        <div class="winbtn" data-win="min">&#8211;</div>
+        <div class="winbtn" data-win="max">&#9633;</div>
+        <div class="winbtn close" data-win="close">&#10005;</div>
+      </div>
+    </div>
+
+    <div class="body">
+      <!-- Nav ------------------------------------------------------------- -->
+      <nav class="nav" id="nav">
+        <div class="navitem active" data-tab="identity">IDENTITY</div>
+        <div class="navitem" data-tab="network">NETWORK</div>
+        <div class="navitem" data-tab="relays">RELAYS</div>
+        <div class="navitem" data-tab="folders">FOLDERS</div>
+        <div class="navitem" data-tab="remote">REMOTE</div>
+        <div class="navitem" data-tab="ports">PORTS</div>
+        <div class="navitem" data-tab="torrent">TORRENT</div>
+        <div class="navitem" data-tab="log">LOG</div>
+      </nav>
+
+      <div class="content">
+        <!-- IDENTITY -->
+        <section class="panel active" id="tab-identity">
+          <div class="group">
+            <div class="ghead">IDENTITY</div>
+            <label class="lbl">Identity file</label>
+            <input id="id-path" readonly />
+            <div class="hint" id="id-state" style="margin-top:8px">signing in…</div>
+            <div class="hint">Your identity is created automatically — no passphrase to type. The private keys live in this file; the folder address below comes from a separate key and does not reveal your relay.</div>
+          </div>
+
+          <div class="group">
+            <div class="ghead">ADDRESS</div>
+            <input id="s-addr-field" readonly value="—" />
+            <div class="hint">Your folder address. It is derived from a separate key and does not reveal your relay.</div>
+          </div>
+
+          <div class="group">
+            <div class="ghead">NODE</div>
+            <div class="row">
+              <div class="field grow" style="margin:0"><label class="lbl">Public address</label><input id="net-host" value="127.0.0.1" spellcheck="false" /></div>
+              <div class="field small" style="margin:0"><label class="lbl">Port</label><input id="net-port" value="9040" spellcheck="false" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><label class="check"><input type="checkbox" id="opt-exit" /><span class="box"></span>Allow exit traffic</label></div>
+            </div>
+            <div class="actions" style="margin-top:12px"><label class="check"><input type="checkbox" id="opt-map" checked /><span class="box"></span>Forward port on router (UPnP / NAT-PMP)</label></div>
+            <div class="actions"><label class="check"><input type="checkbox" id="opt-relay" checked /><span class="box"></span>Relay traffic for others when reachable</label></div>
+            <div class="actions" style="margin-top:12px">
+              <button id="btn-start">START</button>
+              <button id="btn-stop">STOP</button>
+            </div>
+            <div class="hint">Only this port is opened to the internet. It is forwarded via NAT-PMP or UPnP; on success the public address is detected automatically. If the router refuses, forward the port manually and enter the address above.</div>
+          </div>
+        </section>
+
+        <!-- NETWORK -->
+        <section class="panel" id="tab-network">
+          <div class="group">
+            <div class="ghead">NETWORK</div>
+            <div class="row">
+              <div class="field grow" style="margin:0"><label class="lbl">Network name</label><input id="net-name" value="stalknet" spellcheck="false" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-reconnect">RECONNECT</button></div>
+            </div>
+            <div class="hint">The node finds the network by itself — in the BitTorrent DHT and from the cards kept since last run.</div>
+          </div>
+
+          <div class="group">
+            <div class="ghead">HIDDEN SERVICE</div>
+            <div class="row">
+              <div class="field small" style="margin:0"><label class="lbl">Intro points</label><input id="hs-intro" value="3" spellcheck="false" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-hidden-start">START</button></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-hidden-stop">STOP</button></div>
+            </div>
+            <label class="lbl" style="margin-top:12px">Address</label>
+            <input id="hs-addr" readonly value="—" />
+          </div>
+
+          <div class="group">
+            <div class="ghead">WAY OUT (SOCKS5)</div>
+            <div class="row">
+              <div class="field small" style="margin:0"><label class="lbl">Port</label><input id="wo-port" value="9150" spellcheck="false" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-tunnel">OPEN</button></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-tunnel-close">CLOSE</button></div>
+            </div>
+            <label class="lbl" style="margin-top:12px">Open on</label>
+            <input id="wo-state" readonly value="—" />
+          </div>
+
+          <div class="group">
+            <div class="ghead">ANONYMOUS EXIT</div>
+            <div class="row">
+              <div class="field grow" style="margin:0"><label class="lbl">State</label><input id="ax-state" readonly value="off" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-ax-start">START</button></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-ax-stop">STOP</button></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- RELAYS -->
+        <section class="panel" id="tab-relays">
+          <div class="group">
+            <div class="ghead">RELAYS KNOWN — tick to trust as exit</div>
+            <table class="grid">
+              <thead><tr><th>Node</th><th>Address</th><th>Exit</th><th>Trust</th></tr></thead>
+              <tbody id="relay-rows"><tr><td class="empty" colspan="4">none yet</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- FOLDERS -->
+        <section class="panel" id="tab-folders">
+          <div class="group">
+            <div class="ghead">MY SHARED FOLDERS</div>
+            <div class="row">
+              <div class="field grow" style="margin:0"><label class="lbl">Folder path</label><input id="sh-path" spellcheck="false" /></div>
+              <div class="field" style="margin:0"><label class="lbl">Alias</label><input id="sh-alias" spellcheck="false" placeholder="optional" /></div>
+            </div>
+            <div class="actions">
+              <label class="check"><input type="checkbox" id="sh-public" /><span class="box"></span>Public (no password, read only)</label>
+              <button id="btn-share-add">ADD</button>
+            </div>
+            <table class="grid">
+              <thead><tr><th>Alias</th><th>Access</th><th></th></tr></thead>
+              <tbody id="shared-rows"><tr><td class="empty" colspan="3">none</td></tr></tbody>
+            </table>
+          </div>
+
+          <div class="group">
+            <div class="ghead">GUEST ACCOUNTS</div>
+            <div class="row">
+              <div class="field grow" style="margin:0"><label class="lbl">Name</label><input id="ac-user" spellcheck="false" /></div>
+              <div class="field grow" style="margin:0"><label class="lbl">Password</label><input id="ac-pass" type="password" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-ac-add">ADD</button></div>
+            </div>
+            <table class="grid">
+              <thead><tr><th>Name</th><th></th></tr></thead>
+              <tbody id="account-rows"><tr><td class="empty" colspan="2">none</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- REMOTE -->
+        <section class="panel" id="tab-remote">
+          <div class="group">
+            <div class="ghead">VISIT SOMEONE ELSE'S FOLDERS</div>
+            <label class="lbl">Address</label>
+            <div class="row">
+              <div class="field grow" style="margin:0"><input id="vi-target" spellcheck="false" placeholder="….stalknet" /></div>
+              <button id="btn-visit">OPEN</button>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <div class="field grow" style="margin:0"><label class="lbl">Sign in (if needed)</label><input id="vi-user" spellcheck="false" placeholder="user" /></div>
+              <div class="field grow" style="margin:0"><label class="lbl">&nbsp;</label><input id="vi-pass" type="password" placeholder="password" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-visit-login">LOGIN</button></div>
+            </div>
+            <table class="grid">
+              <thead><tr><th>Folder</th><th>Files</th></tr></thead>
+              <tbody id="visit-folders"><tr><td class="empty" colspan="2">open a node or address</td></tr></tbody>
+            </table>
+            <label class="lbl" style="margin-top:12px">Save downloads to</label>
+            <input id="vi-save" spellcheck="false" placeholder="C:\Downloads" />
+            <table class="grid">
+              <thead><tr><th>File</th><th>Size</th><th></th></tr></thead>
+              <tbody id="visit-files"><tr><td class="empty" colspan="3">pick a folder</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- PORTS -->
+        <section class="panel" id="tab-ports">
+          <div class="group">
+            <div class="ghead">OFFER A LOCAL PORT TO THE NETWORK</div>
+            <div class="row">
+              <div class="field small" style="margin:0"><label class="lbl">Network port</label><input id="ex-port" value="1024" spellcheck="false" /></div>
+              <div class="field grow" style="margin:0"><label class="lbl">Local host</label><input id="ex-host" value="127.0.0.1" spellcheck="false" /></div>
+              <div class="field small" style="margin:0"><label class="lbl">Local port</label><input id="ex-local" spellcheck="false" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-expose">OFFER</button></div>
+            </div>
+            <label class="lbl" style="margin-top:12px">Offered ports</label>
+            <input id="ex-list" readonly value="—" />
+          </div>
+
+          <div class="group">
+            <div class="ghead">FORWARD A REMOTE PORT HERE</div>
+            <label class="lbl">Address</label>
+            <input id="fw-target" spellcheck="false" placeholder="….stalknet" />
+            <div class="row" style="margin-top:12px">
+              <div class="field small" style="margin:0"><label class="lbl">Remote port</label><input id="fw-remote" spellcheck="false" /></div>
+              <div class="field small" style="margin:0"><label class="lbl">Local port</label><input id="fw-local" value="0" spellcheck="false" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-forward">FORWARD</button></div>
+            </div>
+            <label class="lbl" style="margin-top:12px">Opened on</label>
+            <input id="fw-state" readonly value="—" />
+          </div>
+        </section>
+
+        <!-- TORRENT -->
+        <section class="panel" id="tab-torrent">
+          <div class="group">
+            <div class="ghead">SHARE</div>
+            <div class="hint" style="margin-top:0">A file or folder, encrypted; you get a link to pass on.</div>
+            <div class="row" style="margin-top:8px">
+              <div class="field grow" style="margin:0"><label class="lbl">Path</label><input id="to-path" spellcheck="false" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-tor-share">SHARE</button></div>
+            </div>
+            <label class="lbl" style="margin-top:12px">Link</label>
+            <input id="to-link" readonly value="—" />
+          </div>
+
+          <div class="group">
+            <div class="ghead">DOWNLOAD</div>
+            <label class="lbl">Link</label>
+            <input id="to-dl-link" spellcheck="false" placeholder="paste the link here" />
+            <div class="row" style="margin-top:12px">
+              <div class="field grow" style="margin:0"><label class="lbl">Save to folder</label><input id="to-dl-save" spellcheck="false" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-tor-dl">DOWNLOAD</button></div>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="ghead">BUNDLES</div>
+            <table class="grid">
+              <thead><tr><th>Name</th><th>Kind</th><th>Size</th><th>State</th><th></th></tr></thead>
+              <tbody id="bundle-rows"><tr><td class="empty" colspan="5">none</td></tr></tbody>
+            </table>
+          </div>
+
+          <div class="group">
+            <div class="ghead">MY SITE</div>
+            <div class="row">
+              <div class="field grow" style="margin:0"><label class="lbl">Folder</label><input id="si-folder" spellcheck="false" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-si-publish">PUBLISH</button></div>
+            </div>
+            <label class="lbl" style="margin-top:12px">Address</label>
+            <input id="si-address" readonly value="—" />
+          </div>
+
+          <div class="group">
+            <div class="ghead">OPEN A SITE</div>
+            <div class="row">
+              <div class="field grow" style="margin:0"><label class="lbl">Address</label><input id="so-address" spellcheck="false" placeholder="….stalknet" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-so-open">OPEN</button></div>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <div class="field grow" style="margin:0"><label class="lbl">Shown at</label><input id="so-url" readonly value="—" /></div>
+              <div class="field" style="margin:0;align-self:flex-end"><button id="btn-so-show">BROWSER</button></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- LOG -->
+        <section class="panel" id="tab-log">
+          <div class="group">
+            <div class="ghead">LOG</div>
+            <pre id="log" class="log"></pre>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Status bar ----------------------------------------------------------- -->
+    <div class="statusbar">
+      <span id="footer-left">idle</span>
+      <span id="footer-right">—</span>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
