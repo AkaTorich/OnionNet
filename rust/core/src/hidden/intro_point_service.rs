@@ -17,10 +17,17 @@ use std::sync::{Arc, Mutex};
 /// One introduction point serves no more services than this.
 pub const MAX_SERVICES: usize = 64;
 
+/// At most this many invitations a minute go through to one service; the
+/// rest are told "busy". A flood of invitations then costs the service no more
+/// than this, whoever sends them.
+pub const MAX_INVITES_PER_MINUTE: u32 = 30;
+
 pub struct IntroPointService {
     /// This relay's fingerprint: a service's Establish must be signed for it.
     own_fingerprint: Vec<u8>,
     services: Mutex<HashMap<Vec<u8>, Arc<ServerStream>>>,
+    /// Per service: the start of the current minute and the invitations in it.
+    invites: Mutex<HashMap<Vec<u8>, (std::time::Instant, u32)>>,
     forwarded: AtomicUsize,
 }
 
@@ -29,8 +36,27 @@ impl IntroPointService {
         Arc::new(IntroPointService {
             own_fingerprint: own_fingerprint.to_vec(),
             services: Mutex::new(HashMap::new()),
+            invites: Mutex::new(HashMap::new()),
             forwarded: AtomicUsize::new(0),
         })
+    }
+
+    /// Whether one more invitation may go to this service this minute.
+    fn may_invite(&self, service: &[u8]) -> bool {
+        let mut invites = self.invites.lock().unwrap();
+        // Old entries go: one per service, and none older than a minute.
+        if invites.len() > 4 * MAX_SERVICES {
+            invites.retain(|_, (since, _)| since.elapsed() < std::time::Duration::from_secs(60));
+        }
+        let entry = invites.entry(service.to_vec()).or_insert((std::time::Instant::now(), 0));
+        if entry.0.elapsed() >= std::time::Duration::from_secs(60) {
+            *entry = (std::time::Instant::now(), 0);
+        }
+        if entry.1 >= MAX_INVITES_PER_MINUTE {
+            return false;
+        }
+        entry.1 += 1;
+        true
     }
 
     pub fn bind(self: &Arc<Self>, stack: &PortStack) {
@@ -88,6 +114,10 @@ impl IntroPointService {
                 return;
             }
         };
+        if !self.may_invite(&fingerprint) {
+            stream.send(&hp::ack(IntroOp::Ack as u8, HiddenStatus::Busy));
+            return;
+        }
 
         // Moved blindly: the contents are sealed on the service's key.
         service.send(&hp::message(IntroOp::Forwarded as u8, invite));

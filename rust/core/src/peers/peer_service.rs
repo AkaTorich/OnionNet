@@ -90,6 +90,8 @@ pub struct ServiceFields {
 pub struct SiteFields {
     pub lookup: Vec<u8>,
     pub version: i64,
+    /// The owner's fingerprint: whose paid place the record takes.
+    pub owner_fingerprint: [u8; FINGERPRINT_SIZE],
 }
 
 type ServiceParser = Arc<dyn Fn(&[u8]) -> Option<ServiceFields> + Send + Sync>;
@@ -112,7 +114,8 @@ pub struct RecordParsers {
 /// not-yet-ported descriptor and record types: an announcement is its signed
 /// bytes, a fetch returns the stored signed bytes.
 pub trait PeerDesk {
-    fn publish_service(&self, signed: &[u8]) -> PeerStatus;
+    /// `pass` is the service key's paid place (see `store_pass`).
+    fn publish_service(&self, signed: &[u8], pass: &[u8]) -> PeerStatus;
     /// The stored announcement by its fingerprint. `None` with a status when
     /// nothing is returned.
     fn fetch_service(&self, fingerprint: &[u8]) -> (Option<Vec<u8>>, PeerStatus);
@@ -120,7 +123,8 @@ pub trait PeerDesk {
     fn announce(&self, info_hash: &[u8], signed_holder: &[u8]) -> PeerStatus;
     /// Who holds the bundle. Empty if nobody, `None` if there was no answer.
     fn holders(&self, info_hash: &[u8]) -> Option<Vec<Vec<u8>>>;
-    fn publish_site(&self, write_secret: &[u8], record: &[u8]) -> PeerStatus;
+    /// `pass` is the site owner's paid place (see `store_pass`).
+    fn publish_site(&self, write_secret: &[u8], record: &[u8], pass: &[u8]) -> PeerStatus;
     fn fetch_site(&self, lookup: &[u8]) -> (Option<Vec<u8>>, PeerStatus);
 }
 
@@ -202,6 +206,8 @@ pub struct PeerService {
     lifetimes: Mutex<Lifetimes>,
     hooks: Mutex<Hooks>,
     offers: Mutex<Offers>,
+    /// The paid places already checked, one Argon2id run per key.
+    passes: super::store_pass::Checked,
 }
 
 impl PeerService {
@@ -228,6 +234,7 @@ impl PeerService {
                 checking: false,
                 disposed: false,
             }),
+            passes: super::store_pass::Checked::new(),
         })
     }
 
@@ -333,11 +340,11 @@ impl PeerService {
 
     fn do_publish_service(self: &Arc<Self>, payload: &[u8]) -> Option<Vec<u8>> {
         let mut r = Cursor::new(payload);
-        let signed = match read_u16_prefixed(&mut r) {
-            Some(s) => s,
-            None => return reply(PeerOp::PublishService, PeerStatus::BadRequest, |_| {}),
+        let (signed, pass) = match (read_u16_prefixed(&mut r), r.take(super::store_pass::SIZE)) {
+            (Some(s), Some(p)) => (s, p.to_vec()),
+            _ => return reply(PeerOp::PublishService, PeerStatus::BadRequest, |_| {}),
         };
-        let status = self.publish_service(&signed);
+        let status = self.publish_service(&signed, &pass);
         reply(PeerOp::PublishService, status, |_| {})
     }
 
@@ -388,8 +395,11 @@ impl PeerService {
         let mut r = Cursor::new(payload);
         let secret = r.take(SITE_SECRET_SIZE).map(|s| s.to_vec());
         let record = read_u16_prefixed(&mut r);
-        match (secret, record) {
-            (Some(secret), Some(record)) => reply(PeerOp::PublishSite, self.publish_site(&secret, &record), |_| {}),
+        let pass = r.take(super::store_pass::SIZE).map(|p| p.to_vec());
+        match (secret, record, pass) {
+            (Some(secret), Some(record), Some(pass)) => {
+                reply(PeerOp::PublishSite, self.publish_site(&secret, &record, &pass), |_| {})
+            }
             _ => reply(PeerOp::PublishSite, PeerStatus::BadRequest, |_| {}),
         }
     }
@@ -630,11 +640,16 @@ impl PeerService {
 impl PeerDesk for PeerService {
     /// Keeps an announcement. The same one again only refreshes it; an older one
     /// is a rollback and is refused.
-    fn publish_service(&self, signed: &[u8]) -> PeerStatus {
+    fn publish_service(&self, signed: &[u8], pass: &[u8]) -> PeerStatus {
         let fields = match (self.parsers.service)(signed) {
             Some(f) => f,
             None => return PeerStatus::BadCard,
         };
+        // A place is paid for once per key: thousands of free keys cannot
+        // crowd the real announcements out.
+        if !self.passes.holds(&fields.fingerprint, pass) {
+            return PeerStatus::BadCard;
+        }
 
         let key = hex(&fields.fingerprint);
         let mut shelves = self.shelves.lock().unwrap();
@@ -645,7 +660,12 @@ impl PeerDesk for PeerService {
                 return PeerStatus::Stale;
             }
         } else if shelves.services.len() >= MAX_SERVICES {
-            return PeerStatus::Full;
+            // Full: the one renewed longest ago makes room. A live service
+            // renews its announcement all the time; what goes is what was left.
+            let stalest = shelves.services.iter().min_by_key(|(_, e)| e.seen).map(|(k, _)| k.clone());
+            if let Some(stalest) = stalest {
+                shelves.services.remove(&stalest);
+            }
         }
 
         shelves.services.insert(
@@ -674,10 +694,13 @@ impl PeerDesk for PeerService {
         }
         // The holder is whoever signed the word — never a fingerprint taken on
         // trust.
-        let holder = match super::holder_proof::verify(info_hash, signed_holder) {
-            Some(fp) => fp,
+        let (holder, pass) = match super::holder_proof::verify(info_hash, signed_holder) {
+            Some(found) => found,
             None => return PeerStatus::BadCard,
         };
+        if !self.passes.holds(&holder, &pass) {
+            return PeerStatus::BadCard;
+        }
         let holder = &holder[..];
 
         let mut shelves = self.shelves.lock().unwrap();
@@ -688,7 +711,15 @@ impl PeerDesk for PeerService {
                 self.prune_swarms(&mut shelves);
             }
             if shelves.swarms.len() >= MAX_SWARMS {
-                return PeerStatus::Full;
+                // Still full: the swarm heard from longest ago makes room.
+                let stalest = shelves
+                    .swarms
+                    .iter()
+                    .min_by_key(|(_, holders)| holders.values().map(|h| h.seen).max())
+                    .map(|(k, _)| k.clone());
+                if let Some(stalest) = stalest {
+                    shelves.swarms.remove(&stalest);
+                }
             }
             shelves.swarms.insert(key.clone(), HashMap::new());
         }
@@ -720,7 +751,7 @@ impl PeerDesk for PeerService {
     /// Keeps a site's record. Whoever first put a record under an address owns
     /// the place: a newer version is taken only with the same write secret, and
     /// the same version again only refreshes it.
-    fn publish_site(&self, write_secret: &[u8], record: &[u8]) -> PeerStatus {
+    fn publish_site(&self, write_secret: &[u8], record: &[u8], pass: &[u8]) -> PeerStatus {
         if write_secret.len() != SITE_SECRET_SIZE {
             return PeerStatus::BadRequest;
         }
@@ -729,6 +760,9 @@ impl PeerDesk for PeerService {
             Some(f) => f,
             None => return PeerStatus::BadCard,
         };
+        if !self.passes.holds(&fields.owner_fingerprint, pass) {
+            return PeerStatus::BadCard;
+        }
 
         let secret_hash: [u8; 32] = Sha256::digest(write_secret).into();
 
@@ -744,7 +778,11 @@ impl PeerDesk for PeerService {
                 return PeerStatus::Stale;
             }
         } else if shelves.sites.len() >= MAX_SITES {
-            return PeerStatus::Full;
+            // Full: the record renewed longest ago makes room.
+            let stalest = shelves.sites.iter().min_by_key(|(_, e)| e.seen).map(|(k, _)| k.clone());
+            if let Some(stalest) = stalest {
+                shelves.sites.remove(&stalest);
+            }
         }
 
         shelves.sites.insert(
@@ -863,23 +901,37 @@ mod tests {
                 Some(SiteFields {
                     lookup: record[..SITE_LOOKUP_SIZE].to_vec(),
                     version: i64::from_le_bytes(v),
+                    owner_fingerprint: TEST_OWNER,
                 })
             }),
         }
     }
 
+    /// The owner the test site records name.
+    const TEST_OWNER: [u8; FINGERPRINT_SIZE] = [5u8; FINGERPRINT_SIZE];
+
     fn desk() -> Arc<PeerService> {
         PeerService::new(Arc::new(PeerView::new()), test_parsers())
+    }
+
+    fn paid(fp: &[u8]) -> Vec<u8> {
+        crate::peers::store_pass::solve(fp)
     }
 
     #[test]
     fn service_publish_fetch_and_rollback() {
         let svc = desk();
         let fp = [7u8; FINGERPRINT_SIZE];
+        let pass = paid(&fp);
         let mut signed = fp.to_vec();
         signed.extend_from_slice(&100i64.to_le_bytes());
 
-        assert_eq!(svc.publish_service(&signed), PeerStatus::Ok);
+        // Without a paid place the keeper keeps nothing.
+        assert_eq!(svc.publish_service(&signed, &[0u8; crate::peers::store_pass::SIZE]), PeerStatus::BadCard);
+        // A place paid for another key does not do either.
+        assert_eq!(svc.publish_service(&signed, &paid(&[8u8; FINGERPRINT_SIZE])), PeerStatus::BadCard);
+
+        assert_eq!(svc.publish_service(&signed, &pass), PeerStatus::Ok);
         let (got, status) = svc.fetch_service(&fp);
         assert_eq!(status, PeerStatus::Ok);
         assert_eq!(got.unwrap(), signed);
@@ -887,7 +939,7 @@ mod tests {
         // An older announcement is a rollback.
         let mut older = fp.to_vec();
         older.extend_from_slice(&50i64.to_le_bytes());
-        assert_eq!(svc.publish_service(&older), PeerStatus::Stale);
+        assert_eq!(svc.publish_service(&older, &pass), PeerStatus::Stale);
 
         // An unknown fingerprint is not here.
         let (none, status) = svc.fetch_service(&[0u8; FINGERPRINT_SIZE]);
@@ -900,7 +952,10 @@ mod tests {
         let svc = desk();
         let hash = [3u8; INFO_HASH_SIZE];
         let key = crate::identity::node_identity::NodeIdentity::create("").unwrap();
-        let word = crate::peers::holder_proof::make(&key, &hash);
+        // An unpaid holder is not listed.
+        let unpaid = crate::peers::holder_proof::make(&key, &hash, &[0u8; crate::peers::store_pass::SIZE]);
+        assert_eq!(svc.announce(&hash, &unpaid), PeerStatus::BadCard);
+        let word = crate::peers::holder_proof::make(&key, &hash, &paid(&key.fingerprint()));
         assert_eq!(svc.announce(&hash, &word), PeerStatus::Ok);
 
         let holders = svc.holders(&hash).unwrap();
@@ -920,17 +975,20 @@ mod tests {
         let secret_a = [1u8; SITE_SECRET_SIZE];
         let secret_b = [2u8; SITE_SECRET_SIZE];
 
+        let pass = paid(&TEST_OWNER);
+
         let mut record = [5u8; SITE_LOOKUP_SIZE].to_vec();
         record.extend_from_slice(&10i64.to_le_bytes());
-        assert_eq!(svc.publish_site(&secret_a, &record), PeerStatus::Ok);
+        assert_eq!(svc.publish_site(&secret_a, &record, &[0u8; crate::peers::store_pass::SIZE]), PeerStatus::BadCard);
+        assert_eq!(svc.publish_site(&secret_a, &record, &pass), PeerStatus::Ok);
 
         // Another secret cannot overwrite it.
         let mut newer = [5u8; SITE_LOOKUP_SIZE].to_vec();
         newer.extend_from_slice(&20i64.to_le_bytes());
-        assert_eq!(svc.publish_site(&secret_b, &newer), PeerStatus::NotOwner);
+        assert_eq!(svc.publish_site(&secret_b, &newer, &pass), PeerStatus::NotOwner);
 
         // The owner may publish a newer version.
-        assert_eq!(svc.publish_site(&secret_a, &newer), PeerStatus::Ok);
+        assert_eq!(svc.publish_site(&secret_a, &newer, &pass), PeerStatus::Ok);
 
         let (record, status) = svc.fetch_site(&[5u8; SITE_LOOKUP_SIZE]);
         assert_eq!(status, PeerStatus::Ok);

@@ -80,6 +80,10 @@ Everything lives in one folder: `%APPDATA%\StalkNet` on Windows, `~/.stalknet` o
 - Every circuit starts at one long-lived guard; two relays of one /16 network never share a circuit.
 - Cards, announcements, site records and torrent holders are signed; nobody can take your site's address or set
   you down as the holder of something. Torrents are checked piece by piece against their hashes.
+- A place at the record keepers is paid for once per key with a proof of work (seconds); a thousand rubbish keys
+  cost a thousand times that. When a keeper is full, the record renewed longest ago goes — live ones renew all the
+  time. An introduction point passes at most 30 invitations a minute to one service, and a service sets up at most
+  8 meetings at once, so a flood of invitations cannot bring it down.
 
 What no network of this kind removes (Tor included): somebody watching both ends of a circuit at once can match
 them by timing; an exit sees what is not encrypted end to end — open sites over HTTPS; a new node's first relays come

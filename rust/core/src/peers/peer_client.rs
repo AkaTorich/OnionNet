@@ -208,10 +208,11 @@ impl<L: DeskLink> PeerClient<L> {
 }
 
 impl<L: DeskLink> PeerDesk for PeerClient<L> {
-    fn publish_service(&self, signed: &[u8]) -> PeerStatus {
+    fn publish_service(&self, signed: &[u8], pass: &[u8]) -> PeerStatus {
         match self.ask(PeerOp::PublishService, |w| {
             w.extend_from_slice(&(signed.len() as u16).to_le_bytes());
             w.extend_from_slice(signed);
+            w.extend_from_slice(pass);
         }) {
             Some((status, _)) => status,
             None => PeerStatus::ServerError,
@@ -270,11 +271,12 @@ impl<L: DeskLink> PeerDesk for PeerClient<L> {
         Some(holders)
     }
 
-    fn publish_site(&self, write_secret: &[u8], record: &[u8]) -> PeerStatus {
+    fn publish_site(&self, write_secret: &[u8], record: &[u8], pass: &[u8]) -> PeerStatus {
         match self.ask(PeerOp::PublishSite, |w| {
             w.extend_from_slice(write_secret);
             w.extend_from_slice(&(record.len() as u16).to_le_bytes());
             w.extend_from_slice(record);
+            w.extend_from_slice(pass);
         }) {
             Some((status, _)) => status,
             None => PeerStatus::ServerError,
@@ -368,6 +370,7 @@ mod tests {
                 Some(SiteFields {
                     lookup: record[..32].to_vec(),
                     version: i64::from_le_bytes(v),
+                    owner_fingerprint: [5u8; FINGERPRINT_SIZE],
                 })
             }),
         }
@@ -389,7 +392,8 @@ mod tests {
         let mut signed = fp.to_vec();
         signed.extend_from_slice(&123i64.to_le_bytes());
 
-        assert_eq!(client.publish_service(&signed), PeerStatus::Ok);
+        let pass = crate::peers::store_pass::solve(&fp);
+        assert_eq!(client.publish_service(&signed, &pass), PeerStatus::Ok);
         let (got, status) = client.fetch_service(&fp);
         assert_eq!(status, PeerStatus::Ok);
         assert_eq!(got.unwrap(), signed);
@@ -402,7 +406,7 @@ mod tests {
 
         let hash = [6u8; 32];
         let key = crate::identity::node_identity::NodeIdentity::create("").unwrap();
-        let word = crate::peers::holder_proof::make(&key, &hash);
+        let word = crate::peers::holder_proof::make(&key, &hash, &crate::peers::store_pass::solve(&key.fingerprint()));
         assert_eq!(client.announce(&hash, &word), PeerStatus::Ok);
         let holders = client.holders(&hash).unwrap();
         assert_eq!(holders, vec![key.fingerprint().to_vec()]);
@@ -410,7 +414,8 @@ mod tests {
         let secret = [1u8; 32];
         let mut record = [9u8; 32].to_vec();
         record.extend_from_slice(&77i64.to_le_bytes());
-        assert_eq!(client.publish_site(&secret, &record), PeerStatus::Ok);
+        let pass = crate::peers::store_pass::solve(&[5u8; FINGERPRINT_SIZE]);
+        assert_eq!(client.publish_site(&secret, &record, &pass), PeerStatus::Ok);
         let (fetched, status) = client.fetch_site(&[9u8; 32]);
         assert_eq!(status, PeerStatus::Ok);
         assert_eq!(fetched.unwrap(), record);

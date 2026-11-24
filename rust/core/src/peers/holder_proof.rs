@@ -8,18 +8,22 @@
 //! signature over the bundle's hash and the time. The keeper takes the
 //! fingerprint from the key itself; a word older than an hour is refused.
 //!
-//! `public key (64) | seconds since 1970 (8, LE) | signature (64)`.
+//! The word also carries the key's paid place (see `store_pass`), which the
+//! keeper checks apart, once per key.
+//!
+//! `public key (64) | seconds since 1970 (8, LE) | store pass (9) | signature (64)`.
 
 use crate::crypto::ecc_p256::SigningKey;
 use crate::identity::node_identity::NodeIdentity;
 use crate::identity::onion_address::{compute_fingerprint, FINGERPRINT_SIZE};
+use crate::peers::store_pass;
 
-const CONTEXT: &[u8] = b"stalknet-holder-v1";
+const CONTEXT: &[u8] = b"stalknet-holder-v2";
 const KEY_SIZE: usize = 64;
 const SIGNATURE_SIZE: usize = 64;
 
 /// The size of a holder's signed word.
-pub const SIZE: usize = KEY_SIZE + 8 + SIGNATURE_SIZE;
+pub const SIZE: usize = KEY_SIZE + 8 + store_pass::SIZE + SIGNATURE_SIZE;
 
 /// How far the word's time may stand from the keeper's clock.
 pub const WINDOW_SECS: u64 = 60 * 60;
@@ -31,26 +35,30 @@ fn now_seconds() -> u64 {
         .unwrap_or(0)
 }
 
-fn signed_part(info_hash: &[u8], seconds: u64) -> Vec<u8> {
-    let mut data = Vec::with_capacity(CONTEXT.len() + info_hash.len() + 8);
+fn signed_part(info_hash: &[u8], seconds: u64, pass: &[u8]) -> Vec<u8> {
+    let mut data = Vec::with_capacity(CONTEXT.len() + info_hash.len() + 8 + pass.len());
     data.extend_from_slice(CONTEXT);
     data.extend_from_slice(info_hash);
     data.extend_from_slice(&seconds.to_le_bytes());
+    data.extend_from_slice(pass);
     data
 }
 
-/// The holder's word for `info_hash`, signed by `holder`.
-pub fn make(holder: &NodeIdentity, info_hash: &[u8]) -> Vec<u8> {
+/// The holder's word for `info_hash`, signed by `holder`, with the key's paid
+/// place `pass` (from `store_pass::solve`).
+pub fn make(holder: &NodeIdentity, info_hash: &[u8], pass: &[u8]) -> Vec<u8> {
     let seconds = now_seconds();
     let mut out = Vec::with_capacity(SIZE);
     out.extend_from_slice(holder.public_signing_key());
     out.extend_from_slice(&seconds.to_le_bytes());
-    out.extend_from_slice(&holder.sign(&signed_part(info_hash, seconds)));
+    out.extend_from_slice(pass);
+    out.extend_from_slice(&holder.sign(&signed_part(info_hash, seconds, pass)));
     out
 }
 
-/// The holder's fingerprint, if the word is its own, for this bundle, and fresh.
-pub fn verify(info_hash: &[u8], word: &[u8]) -> Option<[u8; FINGERPRINT_SIZE]> {
+/// The holder's fingerprint and its pass, if the word is its own, for this
+/// bundle, and fresh. The pass itself is the keeper's to check.
+pub fn verify(info_hash: &[u8], word: &[u8]) -> Option<([u8; FINGERPRINT_SIZE], Vec<u8>)> {
     if word.len() != SIZE {
         return None;
     }
@@ -58,15 +66,16 @@ pub fn verify(info_hash: &[u8], word: &[u8]) -> Option<[u8; FINGERPRINT_SIZE]> {
     let mut seconds = [0u8; 8];
     seconds.copy_from_slice(&word[KEY_SIZE..KEY_SIZE + 8]);
     let seconds = u64::from_le_bytes(seconds);
-    let signature = &word[KEY_SIZE + 8..];
+    let pass = &word[KEY_SIZE + 8..KEY_SIZE + 8 + store_pass::SIZE];
+    let signature = &word[KEY_SIZE + 8 + store_pass::SIZE..];
 
     if now_seconds().abs_diff(seconds) > WINDOW_SECS {
         return None;
     }
-    if !SigningKey::verify(key, &signed_part(info_hash, seconds), signature) {
+    if !SigningKey::verify(key, &signed_part(info_hash, seconds, pass), signature) {
         return None;
     }
-    Some(compute_fingerprint(key))
+    Some((compute_fingerprint(key), pass.to_vec()))
 }
 
 #[cfg(test)]
@@ -77,14 +86,15 @@ mod tests {
     fn the_word_names_its_own_signer() {
         let holder = NodeIdentity::create("").unwrap();
         let hash = [4u8; 32];
-        let word = make(&holder, &hash);
-        assert_eq!(verify(&hash, &word), Some(holder.fingerprint()));
+        let pass = store_pass::solve(&holder.fingerprint());
+        let word = make(&holder, &hash, &pass);
+        assert_eq!(verify(&hash, &word), Some((holder.fingerprint(), pass)));
     }
 
     #[test]
     fn a_word_does_not_move_to_another_bundle_or_break() {
         let holder = NodeIdentity::create("").unwrap();
-        let word = make(&holder, &[4u8; 32]);
+        let word = make(&holder, &[4u8; 32], &[0u8; store_pass::SIZE]);
         assert!(verify(&[5u8; 32], &word).is_none());
         let mut broken = word.clone();
         broken[SIZE - 1] ^= 1;
@@ -96,9 +106,11 @@ mod tests {
         let holder = NodeIdentity::create("").unwrap();
         let hash = [4u8; 32];
         let old = now_seconds() - WINDOW_SECS - 60;
+        let pass = [0u8; store_pass::SIZE];
         let mut word = holder.public_signing_key().to_vec();
         word.extend_from_slice(&old.to_le_bytes());
-        word.extend_from_slice(&holder.sign(&signed_part(&hash, old)));
+        word.extend_from_slice(&pass);
+        word.extend_from_slice(&holder.sign(&signed_part(&hash, old, &pass)));
         assert!(verify(&hash, &word).is_none());
     }
 }

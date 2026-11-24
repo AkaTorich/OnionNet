@@ -66,6 +66,11 @@ impl SiteRecord {
         &self.sealed
     }
 
+    /// The owner's fingerprint (its key grows into the lookup; checked on parse).
+    pub fn owner_fingerprint(&self) -> [u8; crate::identity::onion_address::FINGERPRINT_SIZE] {
+        compute_fingerprint(&self.owner_key)
+    }
+
     pub fn lookup_for(site_fingerprint: &[u8]) -> Vec<u8> {
         hkdf::derive(SALT, site_fingerprint, b"lookup", Self::LOOKUP_SIZE)
     }

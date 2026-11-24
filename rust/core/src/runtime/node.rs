@@ -156,6 +156,8 @@ struct Records {
     trusted_exits: Vec<Vec<u8>>,
     /// Every circuit starts at this one relay (see `pick_guard`).
     guard: Option<Vec<u8>>,
+    /// Paid places at the keepers, by key fingerprint (see `pass_for`).
+    passes: Arc<Mutex<std::collections::HashMap<Vec<u8>, Vec<u8>>>>,
     /// Two relays of one /16 never share a circuit — off only for relays on
     /// one machine (tests), where every address is 127.x.
     distinct_subnets: bool,
@@ -227,11 +229,24 @@ impl Records {
         Some(work(&client))
     }
 
+    /// The paid place at the keepers for a key (see `store_pass`): counted once
+    /// per key, then remembered.
+    fn pass_for(&self, fingerprint: &[u8]) -> Vec<u8> {
+        if let Some(pass) = self.passes.lock().unwrap().get(fingerprint) {
+            return pass.clone();
+        }
+        // Counted outside the lock: seconds of work.
+        let pass = crate::peers::store_pass::solve(fingerprint);
+        self.passes.lock().unwrap().insert(fingerprint.to_vec(), pass.clone());
+        pass
+    }
+
     fn publish_service(&self, descriptor: &ServiceDescriptor) -> Result<(), String> {
         let signed = descriptor.signed_bytes().ok_or("the announcement is not signed")?.to_vec();
+        let pass = self.pass_for(&descriptor.fingerprint());
         let mut taken = 0;
         for keeper in self.keepers(RecordKind::Service, &descriptor.fingerprint(), placement::REPLICAS) {
-            if let Some(status) = self.at_desk(&keeper, |d| d.publish_service(&signed)) {
+            if let Some(status) = self.at_desk(&keeper, |d| d.publish_service(&signed, &pass)) {
                 if status == PeerStatus::Ok {
                     taken += 1;
                 }
@@ -277,7 +292,8 @@ impl Records {
 
     /// Tells the keepers that `holder` has the bundle, in its own signed word.
     fn announce(&self, info_hash: &[u8], holder: &NodeIdentity) {
-        let word = crate::peers::holder_proof::make(holder, info_hash);
+        let pass = self.pass_for(&holder.fingerprint());
+        let word = crate::peers::holder_proof::make(holder, info_hash, &pass);
         for keeper in self.keepers(RecordKind::Holders, info_hash, placement::REPLICAS) {
             let _ = self.at_desk(&keeper, |d| d.announce(info_hash, &word));
         }
@@ -285,11 +301,13 @@ impl Records {
 
     /// Puts a site's record with its keepers.
     fn publish_site(&self, write_secret: &[u8], record: &[u8]) -> Result<(), String> {
-        let lookup = SiteRecord::try_parse(record).ok_or("the site record is damaged")?.lookup().to_vec();
+        let parsed = SiteRecord::try_parse(record).ok_or("the site record is damaged")?;
+        let lookup = parsed.lookup().to_vec();
+        let pass = self.pass_for(&parsed.owner_fingerprint());
         let mut taken = 0;
         let mut refusal = None;
         for keeper in self.keepers(RecordKind::Site, &lookup, placement::REPLICAS) {
-            match self.at_desk(&keeper, |d| d.publish_site(write_secret, record)) {
+            match self.at_desk(&keeper, |d| d.publish_site(write_secret, record, &pass)) {
                 Some(PeerStatus::Ok) => taken += 1,
                 Some(other) => refusal = Some(other),
                 None => {}
@@ -442,6 +460,8 @@ struct Inner {
     accounts: Arc<MemoryAccountAuthenticator>,
     /// The entry every circuit starts at (see `pick_guard`).
     guard: Option<Vec<u8>>,
+    /// Paid places at the keepers, counted once per key for this run.
+    store_passes: Arc<Mutex<std::collections::HashMap<Vec<u8>, Vec<u8>>>>,
     /// The torrent part: seeding, the anonymous exit, sites (node_swarm).
     swarm: node_swarm::SwarmState,
     /// Set to stop the twenty-minute torrent announcement.
@@ -484,6 +504,7 @@ impl Default for Inner {
             accounts: Arc::new(MemoryAccountAuthenticator::new()),
             swarm: node_swarm::SwarmState::default(),
             guard: None,
+            store_passes: Arc::new(Mutex::new(std::collections::HashMap::new())),
             started_port: 0,
             started_allow_exit: false,
         }
@@ -1571,6 +1592,7 @@ impl Node {
             own_desk: inner.desk.clone(),
             trusted_exits: inner.trusted_exits.clone(),
             guard,
+            passes: inner.store_passes.clone(),
             distinct_subnets,
         }
     }
@@ -1632,6 +1654,7 @@ fn record_parsers() -> RecordParsers {
         }),
         site: Arc::new(|bytes: &[u8]| {
             SiteRecord::try_parse(bytes).map(|r| SiteFields {
+                owner_fingerprint: r.owner_fingerprint(),
                 lookup: r.lookup().to_vec(),
                 version: r.version(),
             })

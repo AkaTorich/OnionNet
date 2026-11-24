@@ -95,6 +95,8 @@ struct Inner {
     target_intro_points: AtomicUsize,
     replaced_intro_points: AtomicUsize,
     arrived_count: AtomicUsize,
+    /// Meetings being set up right now (see `MAX_MEETINGS`).
+    meetings: Arc<AtomicUsize>,
 
     intro_backoff: Mutex<Duration>,
     maintenance_interval: Mutex<Duration>,
@@ -311,11 +313,21 @@ impl Inner {
 
             // The invitation is handled aside: while the third circuit is being
             // built, the introduction point must stay free for others.
+            // No more than MAX_MEETINGS at once: each costs a circuit, and a
+            // flood of invitations must not eat the machine.
+            if self.meetings.fetch_add(1, Ordering::SeqCst) >= MAX_MEETINGS {
+                self.meetings.fetch_sub(1, Ordering::SeqCst);
+                continue;
+            }
             let me = self.clone();
-            thread::Builder::new()
-                .name("stalknet-meet".into())
-                .spawn(move || me.meet(body))
-                .expect("spawn meeting thread");
+            let counter = self.meetings.clone();
+            let spawned = thread::Builder::new().name("stalknet-meet".into()).spawn(move || {
+                me.meet(body);
+                counter.fetch_sub(1, Ordering::SeqCst);
+            });
+            if spawned.is_err() {
+                self.meetings.fetch_sub(1, Ordering::SeqCst);
+            }
         }
 
         {
@@ -489,6 +501,10 @@ impl Inner {
     }
 }
 
+/// How many meetings a service sets up at once; invitations past that wait for
+/// none — the client tries again.
+pub const MAX_MEETINGS: usize = 8;
+
 /// A hidden service (the C# `HiddenService`).
 pub struct HiddenService {
     inner: Arc<Inner>,
@@ -511,6 +527,7 @@ impl HiddenService {
             target_intro_points: AtomicUsize::new(0),
             replaced_intro_points: AtomicUsize::new(0),
             arrived_count: AtomicUsize::new(0),
+            meetings: Arc::new(AtomicUsize::new(0)),
             intro_backoff: Mutex::new(Duration::from_secs(5 * 60)),
             maintenance_interval: Mutex::new(Duration::from_secs(2 * 60)),
             stack: Mutex::new(None),

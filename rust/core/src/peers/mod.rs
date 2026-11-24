@@ -18,6 +18,7 @@ pub mod peer_service;
 pub mod peer_view;
 pub mod placement;
 pub mod relay_pass;
+pub mod store_pass;
 
 pub use peer_client::{CircuitDeskLink, DeskLink, PeerClient};
 pub use peer_protocol::{PeerOp, PeerStatus, CHUNK_SIZE, MAX_OFFERED_CARD, OFFER_PIECE};

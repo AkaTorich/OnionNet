@@ -122,6 +122,15 @@ handed out under an address of their own, the anonymous exit, guest accounts.
 - Bundles, the anonymous exit and sites are handed out under addresses made for
   them, never under the relay or the folders' address.
 
+### Floods
+
+- `peers/store_pass`: a place at the keepers costs a proof of work over the key's
+  fingerprint (10 bits, seconds, once per key; a keeper checks it once per key).
+  Required for service announcements, site records and holders.
+- A full keeper drops the record renewed longest ago instead of refusing new ones.
+- An introduction point passes at most 30 invitations a minute per service; a
+  service sets up at most 8 meetings at once.
+
 ### Forgeries
 
 Cards, announcements, site records and holders are all signed; nothing is taken
@@ -135,8 +144,9 @@ on a bare fingerprint. Bundles are checked piece by piece against their hashes.
 - Site records carry the owner's key and an outer signature
   (`stalknet-site-record-v2`): nobody can file a record under another's address,
   not even first.
-- A holder's announcement is its signed word (`holder_proof`), not a bare
-  fingerprint.
+- A holder's announcement is its signed word (`holder_proof`, with its paid
+  place), not a bare fingerprint; service announcements and site records carry
+  a paid place too (`store_pass`).
 - A relay's pass is 14 bits (C#: 10): minutes once per key, and the same for
   every fake relay somebody would raise.
 
